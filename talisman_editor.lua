@@ -186,17 +186,6 @@ local function SetCustomValue(list, index, value)
     return true
 end
 
-local SaveData = nil
-local EquipBox = nil
-mod.HookFunc("app.SaveDataManager", "update()", function(args)
-    if SaveData ~= nil then
-        return
-    end
-    local this = Core.Cast(args[2])
-    SaveData = this:getCurrentUserSaveData()
-    EquipBox = SaveData._Equip._EquipBox
-end)
-
 local IncludeIncomplete = false
 local TextFilter = ""
 
@@ -204,6 +193,67 @@ local Entries = {}
 local EntriesDirty = true
 local EntriesBuiltAt = -math.huge
 local EntriesBuiltCount = -1
+
+local EquipBox = nil
+local SaveDataAddress = nil
+local EquipBoxAddress = nil
+
+local function AddressOf(obj)
+    if obj == nil then
+        return nil
+    end
+    local ok, address = pcall(function()
+        return obj:get_address()
+    end)
+    if ok then
+        return address
+    end
+    return nil
+end
+
+local function GetSaveDataManager()
+    if Core.GetSaveDataManager then
+        local ok, mgr = pcall(Core.GetSaveDataManager)
+        if ok and mgr then
+            return mgr
+        end
+    end
+    return sdk.get_managed_singleton("app.SaveDataManager")
+end
+
+local function SyncSaveData()
+    local save = nil
+    local box = nil
+    local mgr = GetSaveDataManager()
+    if mgr then
+        local ok, current = pcall(function()
+            return mgr:getCurrentUserSaveData()
+        end)
+        if ok then
+            save = current
+        end
+    end
+    if save then
+        local ok, current = pcall(function()
+            return save._Equip._EquipBox
+        end)
+        if ok then
+            box = current
+        end
+    end
+
+    local saveAddress = AddressOf(save)
+    local boxAddress = AddressOf(box)
+    if saveAddress ~= SaveDataAddress or boxAddress ~= EquipBoxAddress then
+        SaveDataAddress = saveAddress
+        EquipBoxAddress = boxAddress
+        EquipBox = box
+        Entries = {}
+        EntriesDirty = true
+        EntriesBuiltCount = -1
+        BrowserState = Browser.NewState()
+    end
+end
 
 local function Now()
     if os and os.clock then
@@ -388,6 +438,7 @@ local function TalismanEditor(entry)
 end
 
 local function TalismanBoxEditor()
+    SyncSaveData()
     if not EquipBox then
         imgui.text("Equipment box not loaded yet. Load into the game first.")
         return
